@@ -271,9 +271,19 @@ Após injeção de tensão:
 - exemplo de entrada: `PQ302`, `PR14`, `PU301`, `PC123`;
 - ao receber o componente, buscar no PDF trechos próximos daquela referência;
 - antes de chamar API, montar dossiê local com nome/part number, circuito provável, pinout extraído e pinos prováveis de alimentação/GND/sense;
-- enviar para API somente o componente, estado do fluxo, dossiê local e trechos filtrados do esquema;
+- localizar a folha/bloco do componente localmente, usando título de folha como `PWR +CPU_CORE/+VGFX_CORE`;
+- expandir o contexto para o bloco funcional do circuito, como VCORE, charger, 3V/5V always ou backlight;
+- extrair rails/nets, controladores, MOSFETs, indutores e passivos de sense/feedback do bloco;
+- enviar para API somente o componente, estado do fluxo, dossiê local, bloco funcional e trechos filtrados do esquema;
 - pedir análise de setor, função provável, pinos/linhas de alimentação quando existirem no contexto e próximos testes;
 - nunca inventar pino ou tensão ausente no PDF/boardview.
+
+Exemplo validado:
+
+- na LA-6901P, `PU12` é extraído como `ISL95831CRZ-T_TQFN48_6X6`;
+- o bloco local é `PWR +CPU_CORE/+VGFX_CORE`;
+- rails esperados no pacote incluem `CPU_CORE`, `VGFX_CORE`, `VIN`, `VDD`, `VDDP`, `BOOT`, `PHASE`;
+- MOSFETs do bloco aparecem como `PQ49`, `PQ50`, `PQ51`, `PQ52`, `PQ53`, `PQ54`, `PQ55`, `PQ56`, `PQ57`, `PQ58`.
 
 Identificação de shunt:
 

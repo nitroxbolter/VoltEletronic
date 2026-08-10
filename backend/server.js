@@ -185,14 +185,41 @@ function extractEntryComponentsFromText(text) {
     .slice(0, 24);
 }
 
-function extractComponentContextFromText(text, ref) {
-  const target = String(ref || '').trim().toUpperCase();
-  if (!target) return { ref: target, snippets: [], component: null, pins: [], powerPins: [], circuit: '' };
+async function parsePdfPages(dataBuffer) {
+  const pages = [];
+  let pageNumber = 0;
 
-  const lines = String(text || '')
+  await pdfParse(dataBuffer, {
+    pagerender: async (pageData) => {
+      pageNumber += 1;
+      const textContent = await pageData.getTextContent({
+        normalizeWhitespace: true,
+        disableCombineTextItems: false,
+      });
+      const text = textContent.items
+        .map((item) => String(item.str || '').trim())
+        .filter(Boolean)
+        .join('\n');
+      pages.push({ pageNumber, text });
+      return text;
+    },
+  });
+
+  return pages;
+}
+
+function compactLines(text) {
+  return String(text || '')
     .split(/\r?\n/)
     .map((line) => line.replace(/\s+/g, ' ').trim())
     .filter(Boolean);
+}
+
+function extractComponentContextFromText(text, ref, pageInfo = null) {
+  const target = String(ref || '').trim().toUpperCase();
+  if (!target) return { ref: target, snippets: [], component: null, pins: [], powerPins: [], circuit: '' };
+
+  const lines = compactLines(text);
 
   const targetPattern = new RegExp(`\\b${target.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
   const electricalTerms = /\b(dcin|vin|b\+|19v|3v|5v|gnd|gate|source|drain|vcc|acdet|acdrv|cmsrc|charger|charge|shunt|sense|acn|acp|bat|battery|regn|phase|mosfet|pwr|pre[-\s]?charge)\b/i;
@@ -227,7 +254,13 @@ function extractComponentContextFromText(text, ref) {
   const partNumber = findComponentPartNumber(localWindow, target);
   const pins = extractPinPairs(localWindow);
   const powerPins = pins.filter((pin) => isPowerLikePin(pin.name));
-  const circuit = inferCircuit({ ref: target, partNumber, pins, text: localWindow.join(' ') });
+  const circuitBlock = buildCircuitBlock(lines, {
+    ref: target,
+    partNumber,
+    pins,
+    pageInfo,
+  });
+  const circuit = circuitBlock.title || circuitBlock.circuit || inferCircuit({ ref: target, partNumber, pins, text: localWindow.join(' ') });
   const component = directLine ? {
     ref: target,
     partNumber,
@@ -243,8 +276,164 @@ function extractComponentContextFromText(text, ref) {
     circuit,
     pins,
     powerPins,
+    circuitBlock,
     snippets: snippets.slice(0, 8),
   };
+}
+
+function findBestComponentPage(pages, ref) {
+  const target = String(ref || '').trim().toUpperCase();
+  if (!target || !Array.isArray(pages) || pages.length === 0) return null;
+  const targetPattern = new RegExp(`\\b${target.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+
+  return pages
+    .map((page) => {
+      const text = page.text || '';
+      let score = targetPattern.test(text) ? 20 : 0;
+      if (/\b(PWR|POWER|CPU_CORE|VGFX_CORE|VCORE|CORE|CHARGER|DCIN|VIN|B\+)\b/i.test(text)) score += 4;
+      if (/\b(Title|Sheet)\b/i.test(text)) score += 2;
+      return { ...page, score };
+    })
+    .filter((page) => page.score > 0)
+    .sort((a, b) => b.score - a.score || a.pageNumber - b.pageNumber)[0] || null;
+}
+
+function extractComponentContextFromPages(pages, ref) {
+  const bestPage = findBestComponentPage(pages, ref);
+  if (!bestPage) {
+    return extractComponentContextFromText(pages.map((page) => page.text).join('\n'), ref);
+  }
+
+  return extractComponentContextFromText(bestPage.text, ref, {
+    pageNumber: bestPage.pageNumber,
+  });
+}
+
+function buildCircuitBlock(lines, { ref, partNumber, pins, pageInfo }) {
+  const pageText = lines.join(' ');
+  const title = extractCircuitTitle(lines);
+  const rails = extractRails(lines);
+  const componentRefs = extractPageComponentRefs(lines);
+  const keySignals = extractKeySignals(lines);
+  const snippets = buildCircuitSnippets(lines, ref);
+  const circuit = inferCircuit({
+    ref,
+    partNumber,
+    pins,
+    text: `${title} ${rails.join(' ')} ${pageText.slice(0, 5000)}`,
+  });
+
+  return {
+    localPage: pageInfo?.pageNumber || null,
+    title,
+    circuit,
+    rails,
+    keySignals,
+    controllers: componentRefs.filter((item) => /^(PU|U)/.test(item.ref)).slice(0, 12),
+    mosfets: componentRefs.filter((item) => /^(PQ|Q)/.test(item.ref)).slice(0, 32),
+    inductors: componentRefs.filter((item) => /^(PL|L)/.test(item.ref)).slice(0, 16),
+    senseAndFeedback: componentRefs.filter((item) => /^(PR|R|PC|C)/.test(item.ref)).slice(0, 40),
+    snippets,
+  };
+}
+
+function extractCircuitTitle(lines) {
+  const candidates = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (/^(?:PWR|POWER)\b/i.test(line) || /\b(?:CPU_CORE|VGFX_CORE|VCORE|CORE|CHARGER|DCIN|ALW|SUSP|DDR|VGA|LCD|BACKLIGHT)\b/i.test(line)) {
+      if (line.length >= 6 && line.length <= 90 && !/CONFIDENTIAL|PROPRIETARY|COMPAL ELECTRONICS/i.test(line)) {
+        candidates.push(line);
+      }
+    }
+  }
+
+  return candidates
+    .sort((a, b) => scoreCircuitTitle(b) - scoreCircuitTitle(a) || b.length - a.length)[0] || '';
+}
+
+function scoreCircuitTitle(line) {
+  let score = 0;
+  if (/^(?:PWR|POWER)\b/i.test(line)) score += 8;
+  if (/[+][A-Z0-9_]+/.test(line)) score += 4;
+  if (/CPU_CORE|VGFX_CORE|VCORE|CORE/i.test(line)) score += 4;
+  if (/CHARGER|DCIN|ALW|SUSP|DDR/i.test(line)) score += 3;
+  return score;
+}
+
+function extractRails(lines) {
+  const rails = new Set();
+  const railPattern = /\b\+?[A-Z0-9_.-]*(?:CPU_CORE|VGFX_CORE|VCORE|CORE|VIN|B\+|DCIN|3VALW|5VALW|VCC|VDD|VSS|PHASE|BOOT)[A-Z0-9_.+-]*\b/g;
+  for (const line of lines) {
+    for (const match of line.match(railPattern) || []) {
+      const rail = match.toUpperCase();
+      if (rail.length >= 2 && rail.length <= 32) rails.add(rail);
+    }
+  }
+  return [...rails].slice(0, 40);
+}
+
+function extractPageComponentRefs(lines) {
+  const refs = new Map();
+  const refPattern = /\b(?:PU|PQ|PR|PC|PL|PD|PF|U|Q|R|C|L|D|F)\d{1,5}[A-Z]?\b/gi;
+
+  lines.forEach((line, index) => {
+    for (const rawRef of line.match(refPattern) || []) {
+      const ref = rawRef.toUpperCase();
+      if (!refs.has(ref)) {
+        refs.set(ref, {
+          ref,
+          role: classifyEntryComponent(ref, line),
+          evidence: line.slice(0, 120),
+          index,
+        });
+      }
+    }
+  });
+
+  return [...refs.values()].sort((a, b) => componentRefPriority(a.ref) - componentRefPriority(b.ref) || a.ref.localeCompare(b.ref));
+}
+
+function componentRefPriority(ref) {
+  if (/^(PU|U)/.test(ref)) return 1;
+  if (/^(PQ|Q)/.test(ref)) return 2;
+  if (/^(PL|L)/.test(ref)) return 3;
+  if (/^(PR|R)/.test(ref)) return 4;
+  if (/^(PC|C)/.test(ref)) return 5;
+  return 6;
+}
+
+function extractKeySignals(lines) {
+  const signals = new Set();
+  const signalPattern = /\b[+A-Z][A-Z0-9_+/#.-]{2,32}\b/g;
+  const useful = /(?:CPU|GFX|CORE|VCORE|VIN|VDD|VCC|VSS|GND|BOOT|UG|LG|PH|FB|COMP|VSEN|ISEN|SDA|SCL|PGOOD|VR_ON|ALERT|IMON|NTC|B\+)/i;
+
+  for (const line of lines) {
+    for (const match of line.match(signalPattern) || []) {
+      const signal = match.toUpperCase();
+      if (useful.test(signal) && !/^(TITLE|SHEET|CUSTOM|COMPAL|ELECTRONICS)$/.test(signal)) signals.add(signal);
+    }
+  }
+
+  return [...signals].slice(0, 80);
+}
+
+function buildCircuitSnippets(lines, ref) {
+  const target = String(ref || '').toUpperCase();
+  const useful = new RegExp(`${target}|CPU_CORE|VGFX_CORE|VCORE|\\+CPU|\\+VGFX|VIN|VDD|GND|BOOT|UG\\d*|LG\\d*|PH\\d*|FB|COMP|VSEN|ISEN|VSSP|VDDP|MOSFET|PHASE|PWR`, 'i');
+  const selected = [];
+  const seen = new Set();
+
+  for (const line of lines) {
+    if (!useful.test(line)) continue;
+    const normalized = line.slice(0, 180);
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
+    selected.push(normalized);
+    if (selected.length >= 120) break;
+  }
+
+  return selected;
 }
 
 function findComponentPartNumber(windowLines, ref) {
@@ -810,9 +999,9 @@ app.post('/schematic/component-context', async (req, res) => {
 
   try {
     const dataBuffer = fs.readFileSync(filePath);
-    const pdfData = await pdfParse(dataBuffer);
-    const result = extractComponentContextFromText(pdfData.text || '', ref);
-    console.log(`[schematic-component] ${ref} | trechos=${result.snippets.length} | arquivo=${filePath}`);
+    const pages = await parsePdfPages(dataBuffer);
+    const result = extractComponentContextFromPages(pages, ref);
+    console.log(`[schematic-component] ${ref} | circuito=${result.circuit || 'n/a'} | bloco=${result.circuitBlock?.title || 'n/a'} | trechos=${result.snippets.length} | arquivo=${filePath}`);
     return res.json(result);
   } catch (err) {
     console.error('[schematic-component] Erro:', err.message);

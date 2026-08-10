@@ -86,6 +86,10 @@ function GuidanceBox({ tone = 'amber', title, children }) {
 
 function buildComponentAnalysisContext({ ref, checklist, state, activeSchematic, componentContext, entryComponents }) {
   const matchedEntry = entryComponents.find((item) => String(item.ref || '').toUpperCase().includes(ref));
+  const circuitBlock = componentContext?.circuitBlock || {};
+  const formatRefs = (items, emptyText) => Array.isArray(items) && items.length
+    ? items.map((item) => `- ${item.ref}: ${item.role || 'referencia do bloco'}`).join('\n')
+    : emptyText;
   const pins = Array.isArray(componentContext?.pins) && componentContext.pins.length
     ? componentContext.pins.map((pin) => `- pino ${pin.number}: ${pin.name} (${pin.kind || 'sinal'})`).join('\n')
     : 'Nenhum pino foi extraido automaticamente do texto do PDF.';
@@ -95,6 +99,9 @@ function buildComponentAnalysisContext({ ref, checklist, state, activeSchematic,
   const snippets = componentContext?.snippets?.length
     ? componentContext.snippets.map((snippet, index) => `Trecho ${index + 1}:\n${snippet}`).join('\n\n')
     : 'Nenhum trecho especifico encontrado no texto extraido do PDF.';
+  const circuitSnippets = Array.isArray(circuitBlock.snippets) && circuitBlock.snippets.length
+    ? circuitBlock.snippets.join('\n')
+    : 'Nenhum trecho do bloco foi extraido automaticamente.';
 
   return [
     '=== ANALISE AVANCADA DE COMPONENTE AQUECENDO ===',
@@ -106,13 +113,31 @@ function buildComponentAnalysisContext({ ref, checklist, state, activeSchematic,
     matchedEntry ? `Componente no painel local: ${matchedEntry.ref} — ${matchedEntry.role}` : 'Componente nao estava na lista local de entrada.',
     componentContext?.component ? `Classificacao pelo PDF: ${componentContext.component.ref} — ${componentContext.component.role}` : 'Sem classificacao direta pelo PDF.',
     `Nome/part number extraido: ${componentContext?.partNumber || componentContext?.component?.partNumber || 'nao encontrado'}`,
-    `Circuito provavel: ${componentContext?.circuit || componentContext?.component?.circuit || 'nao classificado'}`,
+    `Circuito provavel: ${circuitBlock.title || componentContext?.circuit || componentContext?.component?.circuit || 'nao classificado'}`,
+    `Rails/nets principais: ${Array.isArray(circuitBlock.rails) && circuitBlock.rails.length ? circuitBlock.rails.join(', ') : 'nao extraido'}`,
+    `Sinais principais: ${Array.isArray(circuitBlock.keySignals) && circuitBlock.keySignals.length ? circuitBlock.keySignals.slice(0, 45).join(', ') : 'nao extraido'}`,
     '',
     '=== PINOS EXTRAIDOS DO COMPONENTE ===',
     pins,
     '',
     '=== PINOS DE ALIMENTACAO/GND/SENSE DESTACADOS ===',
     powerPins,
+    '',
+    '=== COMPONENTES DO BLOCO DO CIRCUITO ===',
+    'Controladores:',
+    formatRefs(circuitBlock.controllers, 'Nenhum controlador extraido.'),
+    '',
+    'MOSFETs:',
+    formatRefs(circuitBlock.mosfets, 'Nenhum MOSFET extraido.'),
+    '',
+    'Indutores:',
+    formatRefs(circuitBlock.inductors, 'Nenhum indutor extraido.'),
+    '',
+    'Sense/feedback/passivos relevantes:',
+    formatRefs(circuitBlock.senseAndFeedback, 'Nenhum passivo relevante extraido.'),
+    '',
+    '=== TRECHOS DO BLOCO DO CIRCUITO ===',
+    circuitSnippets,
     '',
     '=== TRECHOS FILTRADOS DO ESQUEMA ===',
     snippets,
@@ -124,6 +149,7 @@ function ComponentHeatingAnalysis({ state, onChange, checklist, activeSchematic,
   const [analysis, setAnalysis] = useState('');
   const [error, setError] = useState('');
   const [meta, setMeta] = useState(null);
+  const [componentContext, setComponentContext] = useState(null);
   const ref = String(state.heatingComponent || '').trim().toUpperCase();
 
   async function analyzeComponent() {
@@ -136,9 +162,10 @@ function ComponentHeatingAnalysis({ state, onChange, checklist, activeSchematic,
     setError('');
     setAnalysis('');
     setMeta(null);
+    setComponentContext(null);
 
     try {
-      let componentContext = { ref, snippets: [], component: null };
+      let nextComponentContext = { ref, snippets: [], component: null };
       if (activeSchematic?.path) {
         const contextRes = await fetch(`${API_URL}/schematic/component-context`, {
           method: 'POST',
@@ -146,15 +173,16 @@ function ComponentHeatingAnalysis({ state, onChange, checklist, activeSchematic,
           body: JSON.stringify({ path: activeSchematic.path, ref }),
         });
         const contextData = await contextRes.json();
-        if (contextRes.ok) componentContext = contextData;
+        if (contextRes.ok) nextComponentContext = contextData;
       }
+      setComponentContext(nextComponentContext);
 
       const analyzerContext = buildComponentAnalysisContext({
         ref,
         checklist,
         state,
         activeSchematic,
-        componentContext,
+        componentContext: nextComponentContext,
         entryComponents,
       });
 
@@ -166,7 +194,7 @@ function ComponentHeatingAnalysis({ state, onChange, checklist, activeSchematic,
           analyzerContext,
           message:
             `O componente ${ref} aqueceu durante injecao baixa de tensao em uma placa com suspeita de curto. ` +
-            'Analise o circuito usando obrigatoriamente os campos estruturados do contexto: nome/part number, circuito provavel, pinos extraidos e pinos de alimentacao/GND/sense. Explique o que é o componente, qual setor ele pertence, quais pinos medir para GND, quais pinos parecem alimentacao, se faz sentido remover para isolar o curto, e quais testes fazer depois de remover. Nao invente tensao ou pino ausente; quando faltar dado, diga exatamente o que faltou.',
+            'Analise o circuito usando obrigatoriamente os campos estruturados do contexto: nome/part number, circuito provavel, rails/nets, pinos extraidos, pinos de alimentacao/GND/sense e componentes do bloco. Explique o que e o componente, qual setor ele pertence, quais pinos medir para GND, quais pinos parecem alimentacao, quais MOSFETs/indutores/passivos do bloco podem estar relacionados, se faz sentido remover para isolar o curto, e quais testes fazer depois de remover. Nao invente tensao ou pino ausente; quando faltar dado, diga exatamente o que faltou.',
         }),
       });
       const data = await res.json();
@@ -181,6 +209,8 @@ function ComponentHeatingAnalysis({ state, onChange, checklist, activeSchematic,
   }
 
   const usage = meta?.usage;
+  const circuitBlock = componentContext?.circuitBlock || {};
+  const powerPins = componentContext?.powerPins || [];
 
   return (
     <div className="border border-blue-900/50 bg-blue-950/20 rounded-lg px-4 py-3">
@@ -206,6 +236,41 @@ function ComponentHeatingAnalysis({ state, onChange, checklist, activeSchematic,
       </p>
 
       {error && <p className="text-xs text-rose-300 mt-3">{error}</p>}
+      {componentContext && (
+        <div className="mt-3 border border-slate-800 bg-slate-950/70 rounded-lg p-3">
+          <p className="text-xs font-semibold text-blue-300 mb-2">Pacote local do circuito</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+            <div className="border border-slate-800 rounded-md px-3 py-2">
+              <p className="text-slate-500">Componente</p>
+              <p className="font-mono text-slate-200">{componentContext.ref}</p>
+              <p className="text-slate-400 break-words">{componentContext.partNumber || 'part number nao extraido'}</p>
+            </div>
+            <div className="border border-slate-800 rounded-md px-3 py-2">
+              <p className="text-slate-500">Circuito</p>
+              <p className="text-slate-200 break-words">{circuitBlock.title || componentContext.circuit || 'nao classificado'}</p>
+              <p className="text-slate-500">{componentContext.component?.role || ''}</p>
+            </div>
+          </div>
+          {powerPins.length > 0 && (
+            <div className="mt-2">
+              <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500 mb-1">Pinos alimentacao/GND/sense</p>
+              <div className="flex flex-wrap gap-1.5">
+                {powerPins.slice(0, 16).map((pin) => (
+                  <span key={`${pin.number}-${pin.name}`} className="px-2 py-1 rounded bg-slate-900 border border-slate-800 text-[11px] text-slate-300">
+                    {pin.number}: {pin.name}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          {Array.isArray(circuitBlock.mosfets) && circuitBlock.mosfets.length > 0 && (
+            <div className="mt-2">
+              <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500 mb-1">MOSFETs do bloco</p>
+              <p className="text-xs text-slate-300 font-mono break-words">{circuitBlock.mosfets.slice(0, 18).map((item) => item.ref).join(', ')}</p>
+            </div>
+          )}
+        </div>
+      )}
       {analysis && (
         <div className="mt-3 border border-slate-800 bg-slate-950/70 rounded-lg p-3">
           <div className="flex items-center justify-between gap-3 mb-2 flex-wrap">
