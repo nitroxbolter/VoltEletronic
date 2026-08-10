@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Volt Debug</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #080b10;
+      --panel: #0d1117;
+      --border: #263241;
+      --text: #d8e2ef;
+      --muted: #8796a8;
+      --info: #8bd5ff;
+      --warn: #ffd166;
+      --error: #ff6b6b;
+      --local: #7ee787;
+      --api: #ff7b72;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Consolas, "Cascadia Mono", "Courier New", monospace;
+      overflow: hidden;
+    }
+
+    header {
+      height: 52px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 0 16px;
+      background: #0b1017;
+      border-bottom: 1px solid var(--border);
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: 0;
+    }
+
+    .meta {
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    label {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--muted);
+      font-size: 12px;
+      user-select: none;
+    }
+
+    button {
+      height: 30px;
+      border: 1px solid var(--border);
+      background: #121923;
+      color: var(--text);
+      padding: 0 10px;
+      border-radius: 6px;
+      font: inherit;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    button:hover { background: #182232; }
+
+    #terminal {
+      height: calc(100vh - 52px);
+      overflow: auto;
+      padding: 12px 14px 24px;
+      background: var(--panel);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .line {
+      display: grid;
+      grid-template-columns: 76px 56px minmax(0, 1fr);
+      gap: 10px;
+      padding: 2px 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.025);
+    }
+
+    .time { color: var(--muted); }
+    .level { color: var(--info); text-transform: uppercase; }
+    .line.warn .level, .line.warn .text { color: var(--warn); }
+    .line.error .level, .line.error .text { color: var(--error); }
+    .line.info .level { color: #a6e3a1; }
+    .line.local-ai .level,
+    .line.local-ai .text { color: var(--local); }
+    .line.api-ai .level,
+    .line.api-ai .text { color: var(--api); }
+    .line.api-ai {
+      background: rgba(255, 123, 114, 0.045);
+    }
+    .line.local-ai {
+      background: rgba(126, 231, 135, 0.035);
+    }
+    .line.chat-separator {
+      margin: 8px 0 4px;
+      border-top: 1px solid rgba(139, 213, 255, 0.45);
+      border-bottom: 1px solid rgba(139, 213, 255, 0.18);
+      background: rgba(139, 213, 255, 0.055);
+      font-weight: 700;
+    }
+    .line.summary-ai {
+      background: rgba(255, 209, 102, 0.06);
+      font-weight: 700;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Volt Debug</h1>
+      <div class="meta">Ollama, backend, carregamento do modelo e requisicoes</div>
+    </div>
+    <div class="actions">
+      <label><input id="autoscroll" type="checkbox" checked /> auto-scroll</label>
+      <button id="clear" type="button">Limpar</button>
+    </div>
+  </header>
+
+  <main id="terminal" aria-label="Logs de debug"></main>
+
+  <script>
+    const terminal = document.getElementById('terminal');
+    const autoscroll = document.getElementById('autoscroll');
+    const clear = document.getElementById('clear');
+
+    function classifyAiRoute(text) {
+      const value = String(text || '').toLowerCase();
+      if (value.includes('chat ') && (value.includes(' inicio') || value.includes(' fim'))) {
+        return 'chat-separator';
+      }
+      if (value.includes('resumo ia')) {
+        return value.includes('api-groq') ? 'summary-ai api-ai' : 'summary-ai local-ai';
+      }
+      if (value.includes('api-groq') || value.includes('api groq') || value.includes('groq respondeu') || value.includes('groq processando')) {
+        return 'api-ai';
+      }
+      if (value.includes('frontend local') || value.includes('local-instant') || value.includes('local-ollama') || value.includes('llama local') || value.includes('sem api | sem ollama')) {
+        return 'local-ai';
+      }
+      return '';
+    }
+
+    function appendLog(entry) {
+      const row = document.createElement('div');
+      const routeClass = classifyAiRoute(entry.text);
+      row.className = `line ${entry.level || 'log'} ${routeClass}`.trim();
+
+      const time = document.createElement('span');
+      time.className = 'time';
+      time.textContent = entry.at || '';
+
+      const level = document.createElement('span');
+      level.className = 'level';
+      level.textContent = entry.level || 'log';
+
+      const text = document.createElement('span');
+      text.className = 'text';
+      text.textContent = entry.text || '';
+
+      row.append(time, level, text);
+      terminal.appendChild(row);
+
+      if (autoscroll.checked) {
+        terminal.scrollTop = terminal.scrollHeight;
+      }
+    }
+
+    async function boot() {
+      const logs = await window.debugAPI.getLogs();
+      logs.forEach(appendLog);
+      window.debugAPI.onLog(appendLog);
+    }
+
+    clear.addEventListener('click', async () => {
+      await window.debugAPI.clearLogs();
+      terminal.textContent = '';
+    });
+
+    boot();
+  </script>
+</body>
+</html>

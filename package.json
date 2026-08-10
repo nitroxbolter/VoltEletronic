@@ -1,0 +1,54 @@
+{
+  "name": "electronics-ai-assistant",
+  "version": "1.0.0",
+  "description": "Assistente de IA local para consertos de eletrônica",
+  "private": true,
+  "main": "electron/main.js",
+  "scripts": {
+    "prestart": "node scripts/free-dev-ports.js",
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "npm start --prefix backend",
+    "dev:frontend": "npm run dev --prefix frontend",
+    "install:all": "npm install && npm install --prefix backend && npm install --prefix frontend",
+    "start": "concurrently --kill-others --prefix-colors \"green,yellow\" --names \"Vite,Electron\" \"npm run dev:frontend\" \"npm run start:electron\"",
+    "start:electron": "wait-on http://localhost:5176 && cross-env NODE_ENV=development VOLT_FRONTEND_URL=http://localhost:5176 VOLT_BACKEND_PORT=3003 electron . --disable-gpu --disable-gpu-compositing --in-process-gpu --no-sandbox --disable-features=RendererCodeIntegrity",
+    "build": "npm run build --prefix frontend",
+    "build:electron": "npm run build && electron-builder",
+    "kill": "taskkill /F /IM node.exe /T & taskkill /F /IM electron.exe /T & echo Processos encerrados"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.0",
+    "cross-env": "^7.0.3",
+    "electron": "^28.0.0",
+    "electron-builder": "^24.0.0",
+    "wait-on": "^7.2.0"
+  },
+  "build": {
+    "appId": "com.electronics.aiassistant",
+    "productName": "Assistente de Eletrônica IA",
+    "directories": {
+      "output": "dist-electron"
+    },
+    "files": [
+      "electron/**/*",
+      "backend/**/*",
+      "frontend/dist/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/ollama",
+        "to": "ollama",
+        "filter": ["**/*"]
+      }
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "mac": {
+      "target": "dmg"
+    },
+    "linux": {
+      "target": "AppImage"
+    }
+  }
+}

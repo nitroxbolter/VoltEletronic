@@ -1,0 +1,50 @@
+# Base de conhecimento (dados do usuário — não versionar)
+backend/data/knowledge.json
+backend/data/boards.json
+backend/data/volt.db
+backend/data/*.db
+backend/data/*.db-shm
+backend/data/*.db-wal
+backend/data/*.sqlite
+backend/data/*.sqlite3
+
+# Recursos locais grandes/gerados
+resources/ollama/
+resources/electron-user-data/
+Schematic/
+
+# Dependências
+node_modules/
+**/node_modules/
+
+# Build outputs
+frontend/dist/
+dist-electron/
+*.app
+*.exe
+*.dmg
+*.AppImage
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+
+# Variáveis de ambiente
+.env
+.env.local
+.env.*.local
+
+# Editores
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS
+.DS_Store
+Thumbs.db

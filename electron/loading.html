@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Iniciando...</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #0d1117;
+      color: #c9d1d9;
+      font-family: 'Segoe UI', system-ui, monospace;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      gap: 0;
+      -webkit-app-region: drag;
+      user-select: none;
+    }
+
+    .logo {
+      font-size: 2rem;
+      margin-bottom: 28px;
+      letter-spacing: 0.05em;
+    }
+
+    .spinner {
+      width: 44px;
+      height: 44px;
+      border: 3px solid #21262d;
+      border-top-color: #58a6ff;
+      border-radius: 50%;
+      animation: spin 0.9s linear infinite;
+      margin-bottom: 28px;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    #status {
+      font-size: 14px;
+      color: #e6edf3;
+      font-weight: 500;
+      margin-bottom: 6px;
+      min-height: 20px;
+    }
+
+    #detail {
+      font-size: 11px;
+      color: #6e7681;
+      min-height: 16px;
+      text-align: center;
+      max-width: 340px;
+    }
+
+    #log {
+      position: fixed;
+      bottom: 16px;
+      left: 0; right: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .log-line {
+      font-size: 11px;
+      color: #484f58;
+      font-family: monospace;
+      opacity: 0;
+      animation: fadein 0.3s forwards;
+    }
+
+    @keyframes fadein { to { opacity: 1; } }
+
+    .ok   { color: #3fb950; }
+    .warn { color: #d29922; }
+    .err  { color: #f85149; }
+  </style>
+</head>
+<body>
+  <div class="logo">⚡ Assistente de Eletrônica</div>
+  <div class="spinner" id="spinner"></div>
+  <div id="status">Iniciando...</div>
+  <div id="detail"></div>
+
+  <div id="log"></div>
+
+  <script>
+    const MAX_LOGS = 6;
+
+    function setStatus(msg, detail, type) {
+      document.getElementById('status').textContent = msg || '';
+      document.getElementById('detail').textContent = detail || '';
+
+      if (type === 'done') {
+        document.getElementById('spinner').style.borderTopColor = '#3fb950';
+      } else if (type === 'error') {
+        document.getElementById('spinner').style.borderTopColor = '#f85149';
+        document.getElementById('spinner').style.animationPlayState = 'paused';
+      }
+    }
+
+    function addLog(msg, type) {
+      const logEl = document.getElementById('log');
+      const line = document.createElement('div');
+      line.className = 'log-line' + (type ? ' ' + type : '');
+      line.textContent = msg;
+      logEl.appendChild(line);
+      // Mantém só os últimos N logs
+      while (logEl.children.length > MAX_LOGS) logEl.removeChild(logEl.firstChild);
+    }
+  </script>
+</body>
+</html>
