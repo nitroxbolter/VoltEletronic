@@ -611,6 +611,20 @@ export default function CircuitAnalyzer({ onBack, schematic, diagnosticChecklist
   }, [schematic]);
 
   useEffect(() => {
+    const checklistPdfPath = diagnosticChecklist?.analysisSchematicPath
+      || (diagnosticChecklist?.matchedSchematicKind === 'pdf' ? diagnosticChecklist?.matchedSchematicPath : '');
+    const activeCanBeParsed = activeSchematic?.path && !['boardview', 'external'].includes(activeSchematic.kind);
+    if (schematic?.path || activeCanBeParsed || !checklistPdfPath) return;
+    setActiveSchematic({
+      path: checklistPdfPath,
+      label: diagnosticChecklist.analysisSchematicLabel || diagnosticChecklist.matchedSchematic || checklistPdfPath,
+      title: diagnosticChecklist.analysisSchematicLabel || diagnosticChecklist.matchedSchematic || 'Esquema para analise',
+      kind: 'pdf',
+      source: 'checklist',
+    });
+  }, [schematic, activeSchematic, diagnosticChecklist]);
+
+  useEffect(() => {
     if (!activeSchematic?.path || activeSchematic.kind === 'boardview') {
       setSchematicEntryComponents([]);
       return;

@@ -16,6 +16,10 @@ function mergeDiagnosticChecklist(previous, patch) {
     boardModel: '',
     deviceModel: '',
     matchedSchematic: '',
+    matchedSchematicPath: '',
+    matchedSchematicKind: '',
+    analysisSchematicPath: '',
+    analysisSchematicLabel: '',
     schematicStatus: '',
     summary: '',
     symptom: '',
@@ -27,6 +31,10 @@ function mergeDiagnosticChecklist(previous, patch) {
   if (patch.boardModel) next.boardModel = patch.boardModel;
   if (patch.deviceModel) next.deviceModel = patch.deviceModel;
   if (patch.matchedSchematic) next.matchedSchematic = patch.matchedSchematic;
+  if (patch.matchedSchematicPath) next.matchedSchematicPath = patch.matchedSchematicPath;
+  if (patch.matchedSchematicKind) next.matchedSchematicKind = patch.matchedSchematicKind;
+  if (patch.analysisSchematicPath) next.analysisSchematicPath = patch.analysisSchematicPath;
+  if (patch.analysisSchematicLabel) next.analysisSchematicLabel = patch.analysisSchematicLabel;
   if (patch.schematicStatus !== undefined) next.schematicStatus = patch.schematicStatus;
   if (patch.summary) next.summary = patch.summary;
   if (patch.symptom) next.symptom = patch.symptom;

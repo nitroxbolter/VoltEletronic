@@ -628,6 +628,19 @@ export default function ChatPanel({ analyzerActive, onOpenSchematic, onDiagnosti
     return `${match.title || label} — ${label} (${origin})`;
   }
 
+  function schematicChecklistPatch(match, matches = []) {
+    const options = [match, ...matches].filter(Boolean);
+    const pdfMatch = options.find((item) => schematicPreviewKind(item) === 'pdf');
+    return {
+      matchedSchematic: match.title || match.label || fileBaseName(match.path),
+      matchedSchematicPath: match.path || '',
+      matchedSchematicKind: schematicPreviewKind(match),
+      analysisSchematicPath: pdfMatch?.path || '',
+      analysisSchematicLabel: pdfMatch ? (pdfMatch.title || pdfMatch.label || fileBaseName(pdfMatch.path)) : '',
+      schematicStatus: 'found',
+    };
+  }
+
   function highlightedMatch(match) {
     return `[[blue:${match.title || match.label || fileBaseName(match.path)}]] — ${assetKindLabel(match)}`;
   }
@@ -681,8 +694,7 @@ export default function ChatPanel({ analyzerActive, onOpenSchematic, onDiagnosti
       onOpenSchematic({ ...match, kind });
       pushChecklistPatch({
         activate: true,
-        matchedSchematic: match.title || match.label || fileBaseName(match.path),
-        schematicStatus: 'found',
+        ...schematicChecklistPatch(match, pendingSchematicChoicesRef.current),
         steps: {
         },
       });
@@ -691,8 +703,7 @@ export default function ChatPanel({ analyzerActive, onOpenSchematic, onDiagnosti
       await window.electronAPI.openPath(match.path);
       pushChecklistPatch({
         activate: true,
-        matchedSchematic: match.title || match.label || fileBaseName(match.path),
-        schematicStatus: 'found',
+        ...schematicChecklistPatch(match, pendingSchematicChoicesRef.current),
         steps: {
         },
       });
@@ -757,9 +768,8 @@ export default function ChatPanel({ analyzerActive, onOpenSchematic, onDiagnosti
     const best = matches[0];
     pushChecklistPatch({
       activate: true,
-      matchedSchematic: best.title || best.label || fileBaseName(best.path),
+      ...schematicChecklistPatch(best, matches),
       summary: `Esquema localizado para ${query}`,
-      schematicStatus: 'found',
       steps: {},
     });
     debugLog(`[SCHEMATIC] Melhor resultado | query="${query}" | score=${best.score ?? '-'} | resultado="${best.label || best.title}" | total=${matches.length}`);
