@@ -253,6 +253,8 @@ Estado atual inclui, entre outros:
 - `shortAfterShunt`
 - `visualFound`
 - `injectionDone`
+- `heatingComponent`
+- `heatingMeasurementValue`
 - `externalVideo`
 - `screenLight`
 
@@ -274,9 +276,35 @@ Após injeção de tensão:
 - localizar a folha/bloco do componente localmente, usando título de folha como `PWR +CPU_CORE/+VGFX_CORE`;
 - expandir o contexto para o bloco funcional do circuito, como VCORE, charger, 3V/5V always ou backlight;
 - extrair rails/nets, controladores, MOSFETs, indutores e passivos de sense/feedback do bloco;
-- enviar para API somente o componente, estado do fluxo, dossiê local, bloco funcional e trechos filtrados do esquema;
+- mostrar primeiro o pacote local ao técnico e sugerir o próximo teste local, normalmente resistência do pino/linha de alimentação para GND com placa desligada;
+- registrar a medição informada pelo técnico em `heatingMeasurementValue`;
+- nunca chamar API automaticamente nessa etapa;
+- oferecer botões `Continuar local` e `Usar API`;
+- ao usar API, enviar somente payload compacto com componente, sintoma, pinos relevantes, rails, sinais, refs do bloco, trechos filtrados e medições registradas;
+- nunca enviar PDF inteiro, página inteira sem filtro, histórico completo do chat ou contexto visual bruto;
 - pedir análise de setor, função provável, pinos/linhas de alimentação quando existirem no contexto e próximos testes;
 - nunca inventar pino ou tensão ausente no PDF/boardview.
+
+Fluxo obrigatório para componente aquecendo:
+
+1. identificar componente no schematic/boardview local;
+2. localizar folha/bloco funcional pelo texto do esquema, por exemplo `PWR +CPU_CORE/+VGFX_CORE`;
+3. extrair part number, circuito, pinos, papéis dos pinos, rails, sinais e componentes vizinhos;
+4. classificar pinos como alimentação, GND, enable, power-good, saída/chaveamento, feedback/sense, comunicação ou sinal comum;
+5. sugerir medição local de maior valor, priorizando resistência para GND no pino/linha de alimentação;
+6. aguardar medição do usuário;
+7. continuar localmente quando possível;
+8. só chamar Groq/API se o técnico clicar `Usar API`.
+
+Ordem de decisão nas medições:
+
+1. resistência para GND;
+2. alimentação principal do componente;
+3. enable/VR_ON/RUN;
+4. power-good;
+5. entrada/saída do circuito;
+6. chaveamento/phase/gate somente depois de confirmar alimentação e enable;
+7. análise remota apenas depois de autorização.
 
 Exemplo validado:
 

@@ -84,64 +84,51 @@ function GuidanceBox({ tone = 'amber', title, children }) {
   );
 }
 
-function buildComponentAnalysisContext({ ref, checklist, state, activeSchematic, componentContext, entryComponents }) {
-  const matchedEntry = entryComponents.find((item) => String(item.ref || '').toUpperCase().includes(ref));
+function buildApiCompactPayload({ ref, checklist, state, componentContext }) {
   const circuitBlock = componentContext?.circuitBlock || {};
-  const formatRefs = (items, emptyText) => Array.isArray(items) && items.length
-    ? items.map((item) => `- ${item.ref}: ${item.role || 'referencia do bloco'}`).join('\n')
-    : emptyText;
-  const pins = Array.isArray(componentContext?.pins) && componentContext.pins.length
-    ? componentContext.pins.map((pin) => `- pino ${pin.number}: ${pin.name} (${pin.kind || 'sinal'})`).join('\n')
-    : 'Nenhum pino foi extraido automaticamente do texto do PDF.';
-  const powerPins = Array.isArray(componentContext?.powerPins) && componentContext.powerPins.length
-    ? componentContext.powerPins.map((pin) => `- pino ${pin.number}: ${pin.name} (${pin.kind || 'alimentacao/sense'})`).join('\n')
-    : 'Nenhum pino de alimentacao/GND/sense foi identificado automaticamente.';
-  const snippets = componentContext?.snippets?.length
-    ? componentContext.snippets.map((snippet, index) => `Trecho ${index + 1}:\n${snippet}`).join('\n\n')
-    : 'Nenhum trecho especifico encontrado no texto extraido do PDF.';
-  const circuitSnippets = Array.isArray(circuitBlock.snippets) && circuitBlock.snippets.length
-    ? circuitBlock.snippets.join('\n')
-    : 'Nenhum trecho do bloco foi extraido automaticamente.';
+  const relevantPins = componentContext?.relevantPins?.length ? componentContext.relevantPins : componentContext?.pins || [];
+  return {
+    board: checklist?.boardModel || checklist?.deviceModel || '',
+    symptom: checklist?.symptom || '',
+    circuit: circuitBlock.title || componentContext?.circuit || '',
+    component: {
+      reference: ref,
+      part_number: componentContext?.partNumber || '',
+      type: componentContext?.component?.role || '',
+      relevant_pins: relevantPins.slice(0, 40).map((pin) => ({
+        pin: pin.number,
+        name: pin.name,
+        net: pin.net || '',
+        role: pin.role || pin.kind || 'SIGNAL',
+      })),
+    },
+    measurements: state.heatingMeasurementValue ? [
+      {
+        point: componentContext?.localNextTest?.point || `${ref} alimentacao -> GND`,
+        value: state.heatingMeasurementValue,
+        condition: 'board_off',
+      },
+    ] : [],
+    tests_already_done: [
+      state.injectionDone === 'yes' ? 'injecao baixa de tensao realizada' : '',
+      state.visualFound ? `inspecao visual: ${state.visualFound}` : '',
+    ].filter(Boolean),
+    schematic_context: {
+      rails: circuitBlock.rails || [],
+      keySignals: circuitBlock.keySignals || [],
+      controllers: (circuitBlock.controllers || []).slice(0, 12).map((item) => item.ref),
+      mosfets: (circuitBlock.mosfets || []).slice(0, 32).map((item) => item.ref),
+      inductors: (circuitBlock.inductors || []).slice(0, 16).map((item) => item.ref),
+      snippets: (circuitBlock.snippets || []).slice(0, 80),
+    },
+    goal: 'Determine o proximo teste de maior valor diagnostico sem inventar referencias.',
+  };
+}
 
-  return [
-    '=== ANALISE AVANCADA DE COMPONENTE AQUECENDO ===',
-    `Componente informado: ${ref}`,
-    `Placa: ${checklist?.boardModel || checklist?.deviceModel || 'nao informada'}`,
-    `Sintoma: ${checklist?.symptom || 'nao informado'}`,
-    `Esquema aberto: ${activeSchematic?.label || activeSchematic?.title || activeSchematic?.path || 'nao informado'}`,
-    `Fluxo: powerOn=${state.powerOn || '-'} | noVideo=${state.noVideo || '-'} | dcin=${state.dcinPresent || '-'} | shunt=${state.shuntPresent || '-'} | curtoShunt=${state.shortAtShunt || '-'} | curtoAposShunt=${state.shortAfterShunt || '-'} | injecao=${state.injectionDone || '-'}`,
-    matchedEntry ? `Componente no painel local: ${matchedEntry.ref} — ${matchedEntry.role}` : 'Componente nao estava na lista local de entrada.',
-    componentContext?.component ? `Classificacao pelo PDF: ${componentContext.component.ref} — ${componentContext.component.role}` : 'Sem classificacao direta pelo PDF.',
-    `Nome/part number extraido: ${componentContext?.partNumber || componentContext?.component?.partNumber || 'nao encontrado'}`,
-    `Circuito provavel: ${circuitBlock.title || componentContext?.circuit || componentContext?.component?.circuit || 'nao classificado'}`,
-    `Rails/nets principais: ${Array.isArray(circuitBlock.rails) && circuitBlock.rails.length ? circuitBlock.rails.join(', ') : 'nao extraido'}`,
-    `Sinais principais: ${Array.isArray(circuitBlock.keySignals) && circuitBlock.keySignals.length ? circuitBlock.keySignals.slice(0, 45).join(', ') : 'nao extraido'}`,
-    '',
-    '=== PINOS EXTRAIDOS DO COMPONENTE ===',
-    pins,
-    '',
-    '=== PINOS DE ALIMENTACAO/GND/SENSE DESTACADOS ===',
-    powerPins,
-    '',
-    '=== COMPONENTES DO BLOCO DO CIRCUITO ===',
-    'Controladores:',
-    formatRefs(circuitBlock.controllers, 'Nenhum controlador extraido.'),
-    '',
-    'MOSFETs:',
-    formatRefs(circuitBlock.mosfets, 'Nenhum MOSFET extraido.'),
-    '',
-    'Indutores:',
-    formatRefs(circuitBlock.inductors, 'Nenhum indutor extraido.'),
-    '',
-    'Sense/feedback/passivos relevantes:',
-    formatRefs(circuitBlock.senseAndFeedback, 'Nenhum passivo relevante extraido.'),
-    '',
-    '=== TRECHOS DO BLOCO DO CIRCUITO ===',
-    circuitSnippets,
-    '',
-    '=== TRECHOS FILTRADOS DO ESQUEMA ===',
-    snippets,
-  ].join('\n');
+function buildLocalSummary(componentContext) {
+  if (!componentContext) return '';
+  return componentContext.localNextTest?.text
+    || 'Contexto local montado. Ainda nao consegui definir uma medicao especifica com seguranca pelos dados extraidos.';
 }
 
 function ComponentHeatingAnalysis({ state, onChange, checklist, activeSchematic, entryComponents }) {
@@ -150,11 +137,16 @@ function ComponentHeatingAnalysis({ state, onChange, checklist, activeSchematic,
   const [error, setError] = useState('');
   const [meta, setMeta] = useState(null);
   const [componentContext, setComponentContext] = useState(null);
+  const [localSummary, setLocalSummary] = useState('');
   const ref = String(state.heatingComponent || '').trim().toUpperCase();
 
-  async function analyzeComponent() {
+  async function analyzeLocalComponent() {
     if (!ref) {
       setError('Informe qual componente aqueceu, por exemplo PQ302, PR14 ou PU301.');
+      return;
+    }
+    if (!activeSchematic?.path) {
+      setError('Abra ou selecione um esquema/boardview antes de analisar o componente.');
       return;
     }
 
@@ -163,38 +155,49 @@ function ComponentHeatingAnalysis({ state, onChange, checklist, activeSchematic,
     setAnalysis('');
     setMeta(null);
     setComponentContext(null);
+    setLocalSummary('');
 
     try {
-      let nextComponentContext = { ref, snippets: [], component: null };
-      if (activeSchematic?.path) {
-        const contextRes = await fetch(`${API_URL}/schematic/component-context`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ path: activeSchematic.path, ref }),
-        });
-        const contextData = await contextRes.json();
-        if (contextRes.ok) nextComponentContext = contextData;
-      }
-      setComponentContext(nextComponentContext);
-
-      const analyzerContext = buildComponentAnalysisContext({
-        ref,
-        checklist,
-        state,
-        activeSchematic,
-        componentContext: nextComponentContext,
-        entryComponents,
+      const contextRes = await fetch(`${API_URL}/schematic/component-context`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: activeSchematic.path, ref }),
       });
+      const contextData = await contextRes.json();
+      if (!contextRes.ok) throw new Error(contextData.error || 'Nao consegui extrair o componente no esquema.');
+      const nextComponentContext = contextData;
+      setComponentContext(nextComponentContext);
+      setLocalSummary(buildLocalSummary(nextComponentContext));
+    } catch (err) {
+      setError(err.message || 'Erro ao analisar componente localmente.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function callRemoteApi() {
+    if (!componentContext) {
+      setError('Faça a análise local primeiro para montar o pacote do circuito.');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+    setAnalysis('');
+    setMeta(null);
+
+    try {
+      const compactPayload = buildApiCompactPayload({ ref, checklist, state, componentContext });
 
       const res = await fetch(`${API_URL}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           forceApi: true,
-          analyzerContext,
           message:
             `O componente ${ref} aqueceu durante injecao baixa de tensao em uma placa com suspeita de curto. ` +
-            'Analise o circuito usando obrigatoriamente os campos estruturados do contexto: nome/part number, circuito provavel, rails/nets, pinos extraidos, pinos de alimentacao/GND/sense e componentes do bloco. Explique o que e o componente, qual setor ele pertence, quais pinos medir para GND, quais pinos parecem alimentacao, quais MOSFETs/indutores/passivos do bloco podem estar relacionados, se faz sentido remover para isolar o curto, e quais testes fazer depois de remover. Nao invente tensao ou pino ausente; quando faltar dado, diga exatamente o que faltou.',
+            'Analise o circuito usando obrigatoriamente os campos estruturados do contexto e o payload compacto abaixo. Explique o proximo teste de maior valor diagnostico, sem inventar tensao, pino, net ou referencia ausente.\n\n' +
+            `PAYLOAD_COMPACTO:\n${JSON.stringify(compactPayload, null, 2)}`,
         }),
       });
       const data = await res.json();
@@ -224,15 +227,15 @@ function ComponentHeatingAnalysis({ state, onChange, checklist, activeSchematic,
         />
         <button
           type="button"
-          onClick={analyzeComponent}
+          onClick={analyzeLocalComponent}
           disabled={loading || !ref}
           className="px-3 py-2 rounded-lg text-xs font-semibold bg-blue-700 text-white hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {loading ? 'Analisando...' : 'Analisar pela API'}
+          {loading ? 'Analisando...' : 'Analisar local'}
         </button>
       </div>
       <p className="text-xs text-slate-400 mt-2">
-        Essa etapa envia somente o componente e trechos filtrados do esquema para a API, para identificar setor, linha de alimentacao e proximos testes.
+        Primeiro eu monto o pacote local pelo schematic. A API so aparece depois, com confirmacao.
       </p>
 
       {error && <p className="text-xs text-rose-300 mt-3">{error}</p>}
@@ -257,9 +260,24 @@ function ComponentHeatingAnalysis({ state, onChange, checklist, activeSchematic,
               <div className="flex flex-wrap gap-1.5">
                 {powerPins.slice(0, 16).map((pin) => (
                   <span key={`${pin.number}-${pin.name}`} className="px-2 py-1 rounded bg-slate-900 border border-slate-800 text-[11px] text-slate-300">
-                    {pin.number}: {pin.name}
+                    {pin.number}: {pin.name} {pin.role ? `(${pin.role})` : ''}
                   </span>
                 ))}
+              </div>
+            </div>
+          )}
+          {localSummary && (
+            <div className="mt-3 border border-emerald-800/50 bg-emerald-950/20 rounded-md px-3 py-2">
+              <p className="text-[11px] uppercase tracking-[0.12em] text-emerald-400 mb-1">Proximo teste local</p>
+              <p className="text-xs text-emerald-100 leading-relaxed">{localSummary}</p>
+              <div className="mt-2 flex gap-2 flex-wrap">
+                <input
+                  value={state.heatingMeasurementValue || ''}
+                  onChange={(event) => onChange('heatingMeasurementValue', event.target.value)}
+                  placeholder="Ex: 15 ohms"
+                  className="min-w-[150px] flex-1 bg-slate-950 border border-emerald-900/60 rounded-lg px-3 py-2 text-xs text-slate-100 outline-none focus:border-emerald-500"
+                />
+                <span className="text-[11px] text-slate-500 self-center">medicao local, placa desligada</span>
               </div>
             </div>
           )}
@@ -269,6 +287,29 @@ function ComponentHeatingAnalysis({ state, onChange, checklist, activeSchematic,
               <p className="text-xs text-slate-300 font-mono break-words">{circuitBlock.mosfets.slice(0, 18).map((item) => item.ref).join(', ')}</p>
             </div>
           )}
+          <div className="mt-3 border border-amber-800/50 bg-amber-950/20 rounded-lg p-3">
+            <p className="text-xs font-semibold text-amber-200">Analise avancada disponivel</p>
+            <p className="text-xs text-amber-100/90 mt-1 leading-relaxed">
+              Posso enviar somente o resumo compacto: sintoma, componente, part number, pinos/nets extraidos, medicao registrada e trechos necessarios do circuito.
+            </p>
+            <div className="mt-3 flex gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={() => setAnalysis('Continuamos localmente. Registre a medicao acima e siga o proximo teste indicado antes de remover ou condenar o componente.')}
+                className="px-3 py-2 rounded-lg text-xs font-semibold bg-slate-800 text-slate-200 hover:bg-slate-700"
+              >
+                Continuar local
+              </button>
+              <button
+                type="button"
+                onClick={callRemoteApi}
+                disabled={loading}
+                className="px-3 py-2 rounded-lg text-xs font-semibold bg-rose-700 text-white hover:bg-rose-600 disabled:opacity-50"
+              >
+                Usar API
+              </button>
+            </div>
+          </div>
         </div>
       )}
       {analysis && (

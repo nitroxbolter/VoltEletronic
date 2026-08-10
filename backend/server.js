@@ -254,6 +254,9 @@ function extractComponentContextFromText(text, ref, pageInfo = null) {
   const partNumber = findComponentPartNumber(localWindow, target);
   const pins = extractPinPairs(localWindow);
   const powerPins = pins.filter((pin) => isPowerLikePin(pin.name));
+  const relevantPins = pins
+    .filter((pin) => pin.role !== 'SIGNAL' || /^(VWG|IMON|NTC|PROG)/i.test(pin.name))
+    .slice(0, 60);
   const circuitBlock = buildCircuitBlock(lines, {
     ref: target,
     partNumber,
@@ -276,7 +279,9 @@ function extractComponentContextFromText(text, ref, pageInfo = null) {
     circuit,
     pins,
     powerPins,
+    relevantPins,
     circuitBlock,
+    localNextTest: buildLocalNextTest({ ref: target, circuit, partNumber, powerPins, relevantPins }),
     snippets: snippets.slice(0, 8),
   };
 }
@@ -476,6 +481,8 @@ function extractPinPairs(windowLines) {
       number: pinNumber,
       name,
       kind: classifyPinName(name),
+      role: classifyPinRole(name),
+      net: '',
     });
   }
 
@@ -494,6 +501,49 @@ function classifyPinName(name) {
   if (/^(FB|VSEN|ISEN|ISUM|ISN|ISP|ACN|ACP)/.test(upper)) return 'realimentacao/sense';
   if (/^(SDA|SCL|SCLK|ALERT|PGOOD|VR_ON|EN|IMON|NTC)/.test(upper)) return 'controle/sinal';
   return 'sinal';
+}
+
+function classifyPinRole(name) {
+  const upper = String(name || '').toUpperCase();
+  if (/^(VIN|VCC|VDD|PVCC|PVIN|AVCC|DVCC|VDDQ|VBAT|ACIN|DCIN|\+3VALW|\+5VALW|\+19V)$/.test(upper)) return 'POWER_INPUT';
+  if (/^(GND|PGND|AGND|VSS|VSSP|RTN|RTNG)$/.test(upper)) return 'GROUND';
+  if (/^(EN|ENABLE|VR_ON|VRON|ON|RUN|SUS_ON)$/.test(upper)) return 'ENABLE';
+  if (/^(PG|PGOOD|PWRGD|POWERGOOD|VR_READY)$/.test(upper)) return 'POWER_GOOD';
+  if (/^(OUT|VOUT|PHASE|PHASE\d*|PH\d*|LX|SW|UGATE|LGATE|UG\d*|LG\d*|DRVH|DRVL|BOOT\d*)$/.test(upper)) return 'SWITCH_OUTPUT';
+  if (/^(FB|VSEN|VSENG|ISEN|ISEN\d*|CS|COMP|COMPG|ISUMN|ISUMP|ISN|ISP|ACN|ACP)$/.test(upper)) return 'FEEDBACK_SENSE';
+  if (/^(SDA|SCL|SVID|DATA|CLK|SCLK|ALERT|ALERT#|SMB)$/.test(upper)) return 'COMMUNICATION';
+  return 'SIGNAL';
+}
+
+function buildLocalNextTest({ ref, circuit, partNumber, powerPins, relevantPins }) {
+  const primaryPower = choosePrimaryPowerPin(powerPins);
+  const groundPin = relevantPins.find((pin) => pin.role === 'GROUND');
+  if (!primaryPower) {
+    return {
+      type: 'missing_power_pin',
+      text: `Encontrei ${ref}${partNumber ? ` (${partNumber})` : ''}${circuit ? ` no circuito ${circuit}` : ''}, mas nao consegui identificar um pino de alimentacao com seguranca no texto extraido. Confira o PDF/boardview e informe qual pino/net alimenta esse componente.`,
+    };
+  }
+
+  return {
+    type: 'measure_power_to_ground',
+    point: `${ref} pino ${primaryPower.number} ${primaryPower.name} -> GND`,
+    powerPin: primaryPower,
+    groundPin: groundPin || null,
+    text: `Encontrei ${ref}${partNumber ? ` (${partNumber})` : ''}${circuit ? ` no circuito ${circuit}` : ''}. Antes de condenar o componente, meca com a placa desligada a resistencia entre o pino ${primaryPower.number} (${primaryPower.name}) e GND${groundPin ? `, usando o pino ${groundPin.number} (${groundPin.name}) como referencia se for acessivel` : ''}. Quanto deu?`,
+  };
+}
+
+function choosePrimaryPowerPin(powerPins) {
+  if (!Array.isArray(powerPins) || powerPins.length === 0) return null;
+  const priority = ['VIN', 'PVIN', 'VCC', 'VDD', 'PVCC', 'AVCC', 'DVCC', 'VDDP', 'VBAT', 'REGN'];
+  return [...powerPins].sort((a, b) => {
+    const ai = priority.findIndex((item) => item === String(a.name || '').toUpperCase());
+    const bi = priority.findIndex((item) => item === String(b.name || '').toUpperCase());
+    const av = ai === -1 ? 99 : ai;
+    const bv = bi === -1 ? 99 : bi;
+    return av - bv || a.number - b.number;
+  })[0] || null;
 }
 
 function inferCircuit({ ref, partNumber, pins, text }) {

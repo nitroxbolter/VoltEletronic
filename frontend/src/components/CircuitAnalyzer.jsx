@@ -356,6 +356,7 @@ function buildGuidedFlowSummary(state) {
   if (state.visualFound === 'yes') lines.push('Inspeção visual encontrou componente suspeito');
   if (state.injectionDone === 'yes') lines.push('Injeção de 1V realizada para localizar aquecimento');
   if (state.heatingComponent) lines.push(`Componente aquecendo: ${state.heatingComponent}`);
+  if (state.heatingMeasurementValue) lines.push(`Medição do componente aquecendo: ${state.heatingMeasurementValue}`);
   if (state.externalVideo === 'yes') lines.push('Há vídeo em monitor externo');
   if (state.externalVideo === 'no') lines.push('Sem vídeo também no monitor externo');
   if (state.screenLight === 'yes') lines.push('Tela acende / backlight presente');
@@ -552,6 +553,7 @@ export default function CircuitAnalyzer({ onBack, schematic, diagnosticChecklist
     visualFound: '',
     injectionDone: '',
     heatingComponent: '',
+    heatingMeasurementValue: '',
     externalVideo: '',
     screenLight: '',
   });
@@ -714,6 +716,7 @@ export default function CircuitAnalyzer({ onBack, schematic, diagnosticChecklist
         next.visualFound = '';
         next.injectionDone = '';
         next.heatingComponent = '';
+        next.heatingMeasurementValue = '';
         if (value === 'no') {
           next.powerState = 'no-power';
           next.noVideo = '';
@@ -736,6 +739,7 @@ export default function CircuitAnalyzer({ onBack, schematic, diagnosticChecklist
           next.visualFound = '';
           next.injectionDone = '';
           next.heatingComponent = '';
+          next.heatingMeasurementValue = '';
         } else if (current.powerState === 'no-video') {
           next.powerState = '';
         }
@@ -748,6 +752,7 @@ export default function CircuitAnalyzer({ onBack, schematic, diagnosticChecklist
         next.visualFound = '';
         next.injectionDone = '';
         next.heatingComponent = '';
+        next.heatingMeasurementValue = '';
         next.externalVideo = '';
         next.screenLight = '';
       }
@@ -758,6 +763,7 @@ export default function CircuitAnalyzer({ onBack, schematic, diagnosticChecklist
         next.visualFound = '';
         next.injectionDone = '';
         next.heatingComponent = '';
+        next.heatingMeasurementValue = '';
       }
       if (key === 'shuntPresent' && value !== 'yes') {
         next.shortAtShunt = '';
@@ -765,23 +771,31 @@ export default function CircuitAnalyzer({ onBack, schematic, diagnosticChecklist
         next.visualFound = '';
         next.injectionDone = '';
         next.heatingComponent = '';
+        next.heatingMeasurementValue = '';
       }
       if (key === 'shortAtShunt' && value !== 'yes') {
         next.visualFound = '';
         next.injectionDone = '';
         next.heatingComponent = '';
+        next.heatingMeasurementValue = '';
       }
       if (key === 'shortAfterShunt' && value !== 'yes') {
         next.visualFound = '';
         next.injectionDone = '';
         next.heatingComponent = '';
+        next.heatingMeasurementValue = '';
       }
       if (key === 'visualFound' && value === 'yes') {
         next.injectionDone = '';
         next.heatingComponent = '';
+        next.heatingMeasurementValue = '';
       }
       if (key === 'injectionDone' && value !== 'yes') {
         next.heatingComponent = '';
+        next.heatingMeasurementValue = '';
+      }
+      if (key === 'heatingComponent' && value !== current.heatingComponent) {
+        next.heatingMeasurementValue = '';
       }
       return next;
     });
